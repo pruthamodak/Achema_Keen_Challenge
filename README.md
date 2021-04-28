@@ -1,5 +1,7 @@
 # Keen Challenge
 
+### pytorch and tensorflow implementations are available
+
 ## Do the following
 
 * Create a gitlab account
