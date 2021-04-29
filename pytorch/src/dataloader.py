@@ -41,11 +41,14 @@ class KeenDataloader():
         if self.is_training:
             if self.transforms is None:
                 self.transforms = transforms.Compose([transforms.Normalize((128.0449, 121.9140, 120.4556), (88.4250, 86.5806, 85.8620)),
-                                                      transforms.Resize(size=(256, 256)),])    
+                                                      transforms.Resize(size=(256, 256)),
+                                                      transforms.RandomVerticalFlip(0.5),
+                                                      transforms.RandomRotation([20, 80]),
+                                                      ])    
         else:
             self.transforms = transforms.Resize((256, 256))
         image = self.transforms(image)
-        return {'image' : image, 'label' : torch.tensor(self.labels[os.path.basename(os.path.dirname(self.images[index]))])}         
+        return {'image' : image, 'label' : torch.tensor(self.labels[os.path.basename(os.path.dirname(self.images[index]))], dtype=torch.float32)}         
 
 def get_mean_and_std(dataloader, batch_size):
     channels_sum, channels_sum_squared, num_batches = 0, 0, 0

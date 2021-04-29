@@ -5,11 +5,11 @@ import torch.nn as nn
 import numpy as np
 import torch.optim as optim
 import logging
+import pickle
 
-from random import shuffle
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
-from model import Network
+from network import KeenModel
 from dataloader import KeenDataloader
 from tqdm import tqdm
 
@@ -19,20 +19,20 @@ config = {
     'train_path' : "C:\\Users\\Karthik\\Documents\\KEEN_DATA\\Training",
     'val_path' : "C:\\Users\\Karthik\\Documents\\KEEN_DATA\\Validation",
     'epochs' : 50,
-    'lr' : 0.001,
-    'wd' : 0.0001,
+    'lr' : 0.0001,
+    'wd' : 0,
     'batch_size' : 16,
-    'val_batch_size' : 8,
+    'val_batch_size' : 16,
     'num_workers' : 4,
-    'print_freq' : 200,
     'save_root' : "C:\\Users\\Karthik\\Desktop\\checkpoints",
     'checkpoint' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\checkpoint",
     'logs_root' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\logs",
-    'resume' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\ckpt_epoch_049_.pth",
-    'save_freq' : 1000,
+    'resume' : None,
+    'print_freq' : 200,
+    'save_freq' : 5,
     'val_freq' : 5,
     'initial_eval' : False,
-    'is_training' : False
+    'is_training' : True
 }
 
 def load_model(model, optimizer, config):
@@ -61,8 +61,8 @@ def create_dataloader(config):
     return trainloader, testloader
 
 def create_model_and_optimizer():
-    model = Network(2).to(device)
-    criterion = nn.CrossEntropyLoss().to(device)
+    model = KeenModel(1, 256).to(device)
+    criterion = nn.BCELoss().to(device)
     optimizer = optim.Adam(model.parameters(), lr=config['lr'], weight_decay=config['wd'])
 
     return model, criterion, optimizer
@@ -71,6 +71,8 @@ def train_step(model, criterion, optimizer, trainloader, epoch):
     model.train()
     running_loss = 0.0
     iteration = 0
+    correct = 0
+    total = 0
     for data in tqdm(trainloader):
         iteration+=1
         # get the inputs; data is a list of [inputs, labels]
@@ -81,24 +83,31 @@ def train_step(model, criterion, optimizer, trainloader, epoch):
 
         # forward + backward + optimize
         outputs = model(inputs)
+        outputs = outputs.squeeze()
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
+        # calculate acc
+        total += labels.size(0)
+        predicted = (outputs > 0.5)
+        correct += (predicted == labels).sum().item()
 
         # print statistics
         running_loss += loss.item()
         if iteration % config['print_freq'] == 0:
-            logging.info('[%d, %5d] loss: %.3f' %
-                (epoch + 1, iteration + 1, running_loss / iteration))
-    logging.info('[%d, %5d] Epoch loss: %.3f' %
-                    (epoch + 1, iteration + 1, running_loss/iteration))
+            logging.info('[%d, %5d] loss: %.3f, accuracy: %.3f' %
+                (epoch + 1, iteration, running_loss/iteration, correct/total))
+    logging.info('[%d, %5d] Epoch loss: %.3f, Accuracy: %.3f' %
+                    (epoch + 1, iteration, running_loss/iteration, correct/total))
     logging.info(f'Epoch {epoch} completed')
-    return running_loss/iteration
+    return running_loss/iteration, correct/total
 
 def val_step(model, criterion, optimizer, valloader):
     model.eval()
     val_loss = 0.0
     iteration = 0
+    correct = 0
+    total = 0
     for data in tqdm(valloader):
         iteration+=1
         # get the inputs; data is a list of [inputs, labels]
@@ -106,26 +115,35 @@ def val_step(model, criterion, optimizer, valloader):
 
         # forward + backward + optimize
         outputs = model(inputs)
+        outputs = outputs.squeeze()
         loss = criterion(outputs, labels)
+        total += labels.size(0)
+        predicted = (outputs > 0.5)
+        correct += (predicted == labels).sum().item()
 
-        # print statistics
         val_loss += loss.item()
-        if iteration % config['print_freq'] == 0:
-            logging.info('[%5d] loss: %.3f' %
-                (iteration + 1, val_loss / iteration))
-    logging.info('[%5d] Validation loss: %.3f' %
-                    (iteration + 1, val_loss/iteration))
+    logging.info('[%5d] Validation loss: %.3f, Validation Accuracy: %.3f' %
+                    (iteration, val_loss/iteration, correct/total))
     logging.info(f'Validation completed')
-    return val_loss/iteration
+    return val_loss/iteration, correct/total
 
 def train(epochs, model, criterion, optimizer, trainloader, valloader):
+    metrics = {'train_loss' : [], 'train_acc' : [], 'val_loss' : [], 'val_acc' : []}
     load_model(model, optimizer, config)
     for epoch in range(epochs):  # loop over the dataset multiple times
-        epoch_loss = train_step(model, criterion, optimizer, trainloader, epoch)
+        train_loss, train_acc = train_step(model, criterion, optimizer, trainloader, epoch)
         if epoch % config['val_freq'] == 0:
-            val_loss = val_step(model, criterion, optimizer, valloader)
-        save_model(model, optimizer, epoch, config)
-        logging.info(f"Model saved under : {os.path.join(config['save_root'], f'ckpt_epoch_{epoch}.pth')}")
+            val_loss, val_accuracy = val_step(model, criterion, optimizer, valloader)
+       
+        metrics['train_loss'].append(train_loss)
+        metrics['train_acc'].append(train_acc)
+        metrics['val_loss'].append(val_loss)
+        metrics['val_acc'].append(val_accuracy)
+        # save model
+        if epoch % config['save_freq'] == 0:
+            save_model(model, optimizer, epoch, config)
+            logging.info(f"Model saved under : {os.path.join(config['save_root'], f'ckpt_epoch_{epoch}.pth')}")
+    return metrics
 
 def save_model(model, optimizer, epoch, config):
     # save checkpoint
@@ -134,7 +152,7 @@ def save_model(model, optimizer, epoch, config):
                          'optimizer': optimizer.state_dict(),
                          }
     model_name = os.path.join(
-        config['save_root'], 'ckpt_epoch_%03d_.pth' % (
+        config['checkpoint'], 'ckpt_epoch_%03d_.pth' % (
             epoch))
     torch.save(model_optim_state, model_name)
     logging.info('saved model {}'.format(model_name))
@@ -167,7 +185,9 @@ if __name__ == '__main__':
         if config["initial_eval"]:
             val_loss = val_step(model, criterion, optimizer, valloader)
         logging.info(f"Training model on {device}:")
-        train(config['epochs'], model, criterion, optimizer, trainloader, valloader)
+        metrics = train(config['epochs'], model, criterion, optimizer, trainloader, valloader)
+        with open(os.path.join(config['save_root'], 'metrics.pkl'), 'wb') as pkl:
+            pickle.dump(metrics, pkl, pickle.HIGHEST_PROTOCOL)
         logging.info('Finished Training')
     else:
         sample_set = KeenDataloader(config['val_path'], is_training=False)
