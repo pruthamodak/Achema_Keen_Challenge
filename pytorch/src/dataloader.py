@@ -40,10 +40,12 @@ class KeenDataloader():
         image = torch.from_numpy(np.array(image, dtype=np.float32).transpose((2,0,1)))
         if self.is_training:
             if self.transforms is None:
-                self.transforms = transforms.Compose([transforms.Normalize((128.0449, 121.9140, 120.4556), (88.4250, 86.5806, 85.8620)),
-                                                      transforms.Resize(size=(256, 256)),
+                #
+                self.transforms = transforms.Compose([
+                                                      transforms.Normalize((0.5021, 0.4780, 0.4723), (0.3467, 0.3395, 0.3367)),
+                                                      transforms.RandomCrop((256, 256)),
                                                       transforms.RandomVerticalFlip(0.5),
-                                                      transforms.RandomRotation([20, 80]),
+                                                      transforms.RandomHorizontalFlip(0.5),
                                                       ])    
         else:
             self.transforms = transforms.Resize((256, 256))
@@ -65,22 +67,22 @@ def get_mean_and_std(dataloader, batch_size):
 
 if __name__ == '__main__':
     from tqdm import tqdm
+    import torchvision.transforms.functional as F
     import logging
     logging.basicConfig(level=logging.DEBUG,
                     filename=os.path.join("C:\\Users\\Karthik\\Desktop\\checkpoints", 'mean.log'),
                     format='%(asctime)s %(message)s')
-    datasets = KeenDataloader("C:\\Users\\Karthik\\Documents\\KEEN_DATA\\Training", is_training=False)
-    tkwargs = {'batch_size': 16,
+    datasets = KeenDataloader("C:\\Users\\Karthik\\Documents\\KEEN_DATA\\Training", is_training=True)
+    tkwargs = {'batch_size': 1,
                'num_workers': 1,
                'pin_memory': True, 'drop_last': True}
 
-    train_loader = DataLoader(datasets, **tkwargs)
-    mean, std = get_mean_and_std(train_loader, 16)
-    """
+    #train_loader = DataLoader(datasets, **tkwargs)
+    #mean, std = get_mean_and_std(train_loader, 16)
     train_loader = DataLoader(datasets, **tkwargs)
     for i, sample in enumerate(train_loader):
         print(torch.unique(sample['image'][0]), sample['label'])
-        #plt.imshow(sample['image'][0].numpy().transpose((1,2,0)))
-        #plt.savefig(os.path.join("C:\\Users\\Karthik\\Desktop\\checkpoints", f"{i}.png"))
+        plt.imshow(sample['image'][0].numpy().transpose((1,2,0)))
+        plt.savefig(os.path.join("C:\\Users\\Karthik\\Desktop\\checkpoints", f"{i}.png"))
         if (i==10):
-            break"""
+            break

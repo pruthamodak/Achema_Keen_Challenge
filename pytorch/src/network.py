@@ -20,17 +20,19 @@ class ConvBlock(nn.Module):
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=kernel_size, stride=1, padding=(kernel_size-1)//2, bias=bias)
         self.bn2 = nn.BatchNorm2d(out_channels)
         # for identity
-        self.downsample = nn.AvgPool2d(kernel_size=kernel_size, stride=stride, padding=(kernel_size-1)//2)
+        self.downsample = nn.MaxPool2d(kernel_size=kernel_size, stride=stride, padding=(kernel_size-1)//2)
         self.conv1x1 = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=False)
     
     def forward(self, x):
         identity = self.conv1x1(x)
+        identity = self.downsample(identity)
+        identity = self.bn1(identity)
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.conv2(x)
         x = self.bn2(x)
-        x += self.downsample(identity)
+        x += identity
         return self.relu(x)
 
 class KeenModel(nn.Module):
