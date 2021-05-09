@@ -24,9 +24,9 @@ config = {
     'batch_size' : 16,
     'val_batch_size' : 16,
     'num_workers' : 4,
-    'save_root' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\Exp3",
-    'checkpoint' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\Exp3\\checkpoint",
-    'logs_root' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\Exp3\\logs",
+    'save_root' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\Exp5",
+    'checkpoint' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\Exp5\\checkpoint",
+    'logs_root' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\Exp5\\logs",
     'resume' : None,
     'print_freq' : 200,
     'save_freq' : 5,
@@ -61,8 +61,8 @@ def create_dataloader(config):
     return trainloader, testloader
 
 def create_model_and_optimizer():
-    model = KeenModel(1, 256).to(device)
-    criterion = nn.BCELoss().to(device)
+    model = KeenModel(2, 256).to(device)
+    criterion = nn.CrossEntropyLoss().to(device)
     optimizer = optim.Adam(model.parameters(), lr=config['lr'], weight_decay=config['wd'])
 
     return model, criterion, optimizer
@@ -89,7 +89,7 @@ def train_step(model, criterion, optimizer, trainloader, epoch):
         optimizer.step()
         # calculate acc
         total += labels.size(0)
-        predicted = (outputs > 0.5)
+        _, predicted = torch.max(outputs, dim=1)
         correct += (predicted == labels).sum().item()
 
         # print statistics
@@ -118,7 +118,7 @@ def val_step(model, criterion, optimizer, valloader):
         outputs = outputs.squeeze()
         loss = criterion(outputs, labels)
         total += labels.size(0)
-        predicted = (outputs > 0.5)
+        _, predicted = torch.max(outputs, dim=1)
         correct += (predicted == labels).sum().item()
 
         val_loss += loss.item()

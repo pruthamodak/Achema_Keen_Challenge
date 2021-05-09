@@ -37,20 +37,25 @@ class KeenDataloader():
     def __getitem__(self, index):
         image = self.images[index]
         image = Image.open(image)
-        image = torch.from_numpy(np.array(image, dtype=np.float32).transpose((2,0,1)))
+        #image = torch.from_numpy(np.array(image, dtype=np.float32).transpose((2,0,1)))
         if self.is_training:
             if self.transforms is None:
                 #
                 self.transforms = transforms.Compose([
-                                                      transforms.Normalize((0.5021, 0.4780, 0.4723), (0.3467, 0.3395, 0.3367)),
                                                       transforms.RandomCrop((256, 256)),
+                                                      transforms.RandomAffine([20,50]),
+                                                      transforms.RandomRotation([30,70]),
                                                       transforms.RandomVerticalFlip(0.5),
                                                       transforms.RandomHorizontalFlip(0.5),
+                                                      transforms.ToTensor(),
+                                                      transforms.Normalize((0.5021, 0.4780, 0.4723), (0.3467, 0.3395, 0.3367)),
                                                       ])    
         else:
-            self.transforms = transforms.Resize((256, 256))
+            self.transforms = transforms.Compose([transforms.Resize((256, 256)),
+                                                  transforms.ToTensor(),
+                                                  transforms.Normalize((0.5021, 0.4780, 0.4723), (0.3467, 0.3395, 0.3367))])
         image = self.transforms(image)
-        return {'image' : image, 'label' : torch.tensor(self.labels[os.path.basename(os.path.dirname(self.images[index]))], dtype=torch.float32)}         
+        return {'image' : image, 'label' : torch.tensor(self.labels[os.path.basename(os.path.dirname(self.images[index]))], dtype=torch.int64)}         
 
 def get_mean_and_std(dataloader, batch_size):
     channels_sum, channels_sum_squared, num_batches = 0, 0, 0
