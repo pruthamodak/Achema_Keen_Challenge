@@ -6,40 +6,45 @@ import numpy as np
 import torch.optim as optim
 import logging
 import pickle
+import torchvision.models as models
 
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from network import KeenModel
 from dataloader import KeenDataloader
 from tqdm import tqdm
+from torchvision import transforms
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 config = {
     'train_path' : "C:\\Users\\Karthik\\Documents\\KEEN_DATA\\Training",
     'val_path' : "C:\\Users\\Karthik\\Documents\\KEEN_DATA\\Validation",
-    'epochs' : 50,
+    'epochs' : 20,
     'lr' : 0.0001,
-    'wd' : 0,
-    'batch_size' : 16,
-    'val_batch_size' : 16,
+    'wd' : 0.0001,
+    'batch_size' : 64,
+    'val_batch_size' : 64,
     'num_workers' : 4,
-    'save_root' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\Exp5",
-    'checkpoint' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\Exp5\\checkpoint",
-    'logs_root' : "C:\\Users\\Karthik\\Desktop\\checkpoints\\Exp5\\logs",
+    'save_root' : "C:\\Users\\Karthik\\Desktop\\experiments\\AVGPOOL",
+    'checkpoint' : "C:\\Users\\Karthik\\Desktop\\experiments\\AVGPOOL\\checkpoint",
+    'logs_root' : "C:\\Users\\Karthik\\Desktop\\experiments\\AVGPOOL\\logs",
     'resume' : None,
-    'print_freq' : 200,
-    'save_freq' : 5,
-    'val_freq' : 5,
+    'print_freq' : 100,
+    'save_freq' : 1,
+    'val_freq' : 2,
     'initial_eval' : False,
-    'is_training' : True
+    'is_training' : True,
+    'lr_factor' : 0.1,
+    'lr_step_size' : 7,
+    'start_epoch' : 0,
 }
 
 def load_model(model, optimizer, config):
     if config["resume"] is not None : 
         checkpoint = torch.load(config['resume'], map_location='cpu')
-        if 'model' in checkpoint:
-            model.load_state_dict(checkpoint['model'], strict=False)
+        if 'state_dict' in checkpoint:
+            model.load_state_dict(checkpoint['state_dict'], strict=False)
         #if 'optimizer' in checkpoint:
         #    optimizer.load_state_dict(checkpoint['optimizer'])
 
@@ -61,14 +66,15 @@ def create_dataloader(config):
     return trainloader, testloader
 
 def create_model_and_optimizer():
-    model = KeenModel(2, 256).to(device)
+    model = KeenModel(2, 256)
+    model = model.to(device)
     criterion = nn.CrossEntropyLoss().to(device)
     optimizer = optim.Adam(model.parameters(), lr=config['lr'], weight_decay=config['wd'])
+    load_model(model, optimizer, config)
 
     return model, criterion, optimizer
 
 def train_step(model, criterion, optimizer, trainloader, epoch):
-    model.train()
     running_loss = 0.0
     iteration = 0
     correct = 0
@@ -102,7 +108,7 @@ def train_step(model, criterion, optimizer, trainloader, epoch):
     logging.info(f'Epoch {epoch} completed')
     return running_loss/iteration, correct/total
 
-def val_step(model, criterion, optimizer, valloader):
+def val_step(model, criterion, valloader):
     model.eval()
     val_loss = 0.0
     iteration = 0
@@ -120,7 +126,6 @@ def val_step(model, criterion, optimizer, valloader):
         total += labels.size(0)
         _, predicted = torch.max(outputs, dim=1)
         correct += (predicted == labels).sum().item()
-
         val_loss += loss.item()
     logging.info('[%5d] Validation loss: %.3f, Validation Accuracy: %.3f' %
                     (iteration, val_loss/iteration, correct/total))
@@ -129,20 +134,30 @@ def val_step(model, criterion, optimizer, valloader):
 
 def train(epochs, model, criterion, optimizer, trainloader, valloader):
     metrics = {'train_loss' : [], 'train_acc' : [], 'val_loss' : [], 'val_acc' : []}
-    load_model(model, optimizer, config)
-    for epoch in range(epochs):  # loop over the dataset multiple times
+    model.train()
+    # le scheduler
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, config['lr_step_size'])
+    for epoch in range(config['start_epoch'], epochs):
+        logging.info(f"Current learning rate : {scheduler.get_last_lr()}")
+        # train a single epoch
         train_loss, train_acc = train_step(model, criterion, optimizer, trainloader, epoch)
+        # validation
         if epoch % config['val_freq'] == 0:
-            val_loss, val_accuracy = val_step(model, criterion, optimizer, valloader)
-       
+            val_loss, val_accuracy = val_step(model, criterion, valloader)
+            metrics['val_loss'].append(val_loss)
+            metrics['val_acc'].append(val_accuracy)
+        # lr schedule
+        scheduler.step()
+        # update metrics
         metrics['train_loss'].append(train_loss)
         metrics['train_acc'].append(train_acc)
-        metrics['val_loss'].append(val_loss)
-        metrics['val_acc'].append(val_accuracy)
         # save model
         if epoch % config['save_freq'] == 0:
             save_model(model, optimizer, epoch, config)
             logging.info(f"Model saved under : {os.path.join(config['save_root'], f'ckpt_epoch_{epoch}.pth')}")
+    # save at the end of epoch
+    save_model(model, optimizer, epoch, config)
+    logging.info(f"Model saved under : {os.path.join(config['save_root'], f'ckpt_epoch_{epoch}.pth')}")
     return metrics
 
 def save_model(model, optimizer, epoch, config):
@@ -157,13 +172,24 @@ def save_model(model, optimizer, epoch, config):
     torch.save(model_optim_state, model_name)
     logging.info('saved model {}'.format(model_name))
 
-def predict(model, optimizer, sample, config):
-    # predict a single sample
-    load_model(model, optimizer, config)
-    model.eval()
-    inputs, labels = sample['image'].to(device), sample['label']
-    prediction = model(inputs)
-    print(torch.nn.functional.softmax(prediction), labels)
+def predict(image_path, ckpt_path):
+    label = {0 : "Fluten", 1: "Normalzustand"}
+    # create model
+    model = KeenModel(2, 256)
+    # load checkpoint
+    checkpoint = torch.load(ckpt_path, map_location='cpu')
+    if 'state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['state_dict'], strict=False)
+    # basic transformations
+    transform = transforms.Compose([transforms.Resize((256, 256)), transforms.ToTensor(),])
+    # open image
+    image = Image.open(image_path)
+    image = transform(image)
+    image = torch.unsqueeze(image, dim=0)
+    model = model.eval() 
+    outputs = model(image)
+    _, prediction = torch.max(outputs, dim=1)
+    return label[int(prediction)]
 
 if __name__ == '__main__':
     if config['is_training']:
@@ -171,7 +197,7 @@ if __name__ == '__main__':
         os.makedirs(config['logs_root'], exist_ok=True)
         os.makedirs(config['checkpoint'], exist_ok=True)
 
-        logging.basicConfig(level=logging.DEBUG,
+        logging.basicConfig(level=logging.INFO,
                         filename=os.path.join(config['logs_root'], 'stdout.log'),
                         format='%(asctime)s %(message)s')
         logging.info('Run configurations:')
@@ -183,21 +209,28 @@ if __name__ == '__main__':
         model, criterion, optimizer = create_model_and_optimizer()
     
         if config["initial_eval"]:
-            val_loss = val_step(model, criterion, optimizer, valloader)
+            val_loss = val_step(model, criterion, valloader)
         logging.info(f"Training model on {device}:")
         metrics = train(config['epochs'], model, criterion, optimizer, trainloader, valloader)
         with open(os.path.join(config['save_root'], 'metrics.pkl'), 'wb') as pkl:
             pickle.dump(metrics, pkl, pickle.HIGHEST_PROTOCOL)
         logging.info('Finished Training')
     else:
-        sample_set = KeenDataloader(config['val_path'], is_training=False)
-        tkwargs = {'batch_size': 1,
-                'num_workers': 1,
-                'pin_memory': True, 'drop_last': True}
-        sampleloader = DataLoader(sample_set, **tkwargs)
-        model, criterion, optimizer = create_model_and_optimizer()
-        for i, sample in enumerate(sampleloader):
-            predict(model, optimizer, sample, config)
-            if i == 5:
+        #logging.basicConfig(level=logging.INFO,
+        #                filename=os.path.join(config['save_root'], 'val.log'),
+        #                format='%(asctime)s %(message)s')
+        #trainloader, valloader = create_dataloader(config)
+        ##model, criterion, optimizer = create_model_and_optimizer()
+        #val_loss, val_accuracy = val_step(model, criterion, valloader)
+        #print(val_loss, val_accuracy)
+        
+        img_dir = "C:\\Users\\Karthik\\Documents\\KEEN_DATA\\Validation\\Fluten"
+        count = 0
+        for img in sorted(os.listdir(img_dir)):
+            if count == 20:
                 break
+            img_path = os.path.join(img_dir, img)
+            output = predict(img_path, "C:\\Users\\Karthik\\Desktop\\experiments\\Exp6\\checkpoint\\ckpt_epoch_000_.pth")
+            print(output)
+            count += 1
 
