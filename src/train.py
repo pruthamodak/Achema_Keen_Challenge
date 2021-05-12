@@ -102,11 +102,11 @@ def train_step(model, criterion, optimizer, trainloader, epoch):
         running_loss += loss.item()
         if iteration % config['print_freq'] == 0:
             logging.info('[%d, %5d] loss: %.3f, accuracy: %.3f' %
-                (epoch + 1, iteration, running_loss/iteration, correct/total))
+                (epoch + 1, iteration, running_loss/(iteration+1e-5), correct/(total+1e-5)))
     logging.info('[%d, %5d] Epoch loss: %.3f, Accuracy: %.3f' %
-                    (epoch + 1, iteration, running_loss/iteration, correct/total))
+                    (epoch + 1, iteration, running_loss/(iteration+1e-5), correct/(total+1e-5)))
     logging.info(f'Epoch {epoch} completed')
-    return running_loss/iteration, correct/total
+    return running_loss/(iteration+1e-5), correct/(total+1e-5)
 
 def val_step(model, criterion, valloader):
     model.eval()
@@ -128,9 +128,9 @@ def val_step(model, criterion, valloader):
         correct += (predicted == labels).sum().item()
         val_loss += loss.item()
     logging.info('[%5d] Validation loss: %.3f, Validation Accuracy: %.3f' %
-                    (iteration, val_loss/iteration, correct/total))
+                    (iteration, val_loss/(iteration+1e-5), correct/(total+1e-5)))
     logging.info(f'Validation completed')
-    return val_loss/iteration, correct/total
+    return val_loss/(iteration+1e-5), correct/(total+1e-5)
 
 def train(epochs, model, criterion, optimizer, trainloader, valloader):
     metrics = {'train_loss' : [], 'train_acc' : [], 'val_loss' : [], 'val_acc' : []}

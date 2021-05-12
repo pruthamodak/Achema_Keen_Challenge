@@ -83,3 +83,43 @@ class KeenModel(nn.Module):
         x = self.relu(self.fc1(x))
         x = self.fc2(x)
         return x
+
+def download_file_from_google_drive(id, destination):
+    """
+    Downloads file from drive
+    """
+    import requests
+    URL = "https://docs.google.com/uc?export=download"
+    session = requests.Session()
+    response = session.get(URL, params = { 'id' : id }, stream = True)
+    token = None
+    for key, value in response.cookies.items():
+        if key.startswith('download_warning'):
+            token = value
+    if token:
+        params = { 'id' : id, 'confirm' : token }
+        response = session.get(URL, params = params, stream = True)
+
+    CHUNK_SIZE = 32768
+
+    with open(destination, "wb") as f:
+        for chunk in response.iter_content(CHUNK_SIZE):
+            if chunk:
+                f.write(chunk)
+
+def keen_model(pretrained=True, num_classes=2, input_shape=256, factor=4):
+    """
+    helper function to create model
+    """
+    try:
+        model = KeenModel(num_classes, input_shape, factor)
+        if pretrained:
+            checkpoint_path = os.path.join(os.getcwd(), "checkpoint.pth")
+            download_file_from_google_drive("1R06Oz4ZCcmHu3TGNG38raPfmVFYau2yy", checkpoint_path)
+            checkpoint = torch.load(checkpoint_path, map_location='cpu')
+            if 'state_dict' in checkpoint:
+                model.load_state_dict(checkpoint['state_dict'], strict=False)
+    except BaseException as e:
+        print("Error downloading checkpoint. {e}")
+        print("Please download it manually from the following url : https://drive.google.com/file/d/1R06Oz4ZCcmHu3TGNG38raPfmVFYau2yy/view?usp=sharing")
+    return model
