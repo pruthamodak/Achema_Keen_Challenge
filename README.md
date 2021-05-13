@@ -1,10 +1,19 @@
-# Keen Challenge
+# Condition detection using AI
+Deep learning approach to classify the image to belong to a perticular condition class.
 
-### pytorch and tensorflow implementations are available
+### Model Architecture
+![Model Architecture](https://drive.google.com/uc?export=view&id=1T5tcZlk0ZZv5j5iinWiCSLDz01rcxGma)
 
-## Do the following
+### Training
+To train the model do the following:
 
-* Create a gitlab account
-* Add ssh key to this repository
-* Create your own branch
-* Push your work to your own branch
+* Update configurations in ```train.py``` and run:
+```
+python train.py
+```
+
+### Evaluation
+There is a notebook available for running the model evaluation. Please have a look at that notebook for more info.
+
+### Predict
+Again refer the nnotebook for using the prediction funvtion.
